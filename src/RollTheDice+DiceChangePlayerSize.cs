@@ -5,19 +5,53 @@ namespace RollTheDice
 {
     public partial class RollTheDice : BasePlugin
     {
+        public override string ModuleName => "RollTheDice";
+        public override string ModuleVersion => "1.0.0";
+
         private List<CCSPlayerPawn> _playersWithChangedModelSize = new();
 
-        private Dictionary<string, string> DiceChangePlayerSize(CCSPlayerController player, CCSPlayerPawn playerPawn)
+        public override void OnChatMessage(CCSPlayerController sender, ChatMessageEventArgs args)
         {
-            Dictionary<string, object> config = GetDiceConfig("DiceChangePlayerSize");
+            var message = args.Message.Trim();
+            if (!message.StartsWith("!givedice", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var parts = message.Split(' ');
+            if (parts.Length != 4 || parts[2].ToLower() != "size")
+            {
+                sender.PrintToChat("Použití: !givedice <JmenoHrace> size <velikost>");
+                return;
+            }
+
+            string targetName = parts[1];
+            if (!float.TryParse(parts[3], out float size))
+            {
+                sender.PrintToChat("Neplatná velikost.");
+                return;
+            }
+
+            var targetPlayer = Utilities.GetPlayers().FirstOrDefault(p => p.IsValid && p.PlayerName.Equals(targetName, StringComparison.OrdinalIgnoreCase));
+            if (targetPlayer == null || targetPlayer.PlayerPawn == null || !targetPlayer.PlayerPawn.IsValid)
+            {
+                sender.PrintToChat($"Hráč '{targetName}' nebyl nalezen nebo není validní.");
+                return;
+            }
+
+            var result = DiceChangePlayerSize(targetPlayer, targetPlayer.PlayerPawn.Value, size);
+            sender.PrintToChat($"✅ Změněna velikost hráče {result["playerName"]} na {result["playerSize"]}");
+        }
+
+        private Dictionary<string, string> DiceChangePlayerSize(CCSPlayerController player, CCSPlayerPawn playerPawn, float playerSize)
+        {
             _playersWithChangedModelSize.Add(playerPawn);
-            float playerSize = float.Round((float)(_random.NextDouble() * ((float)config["max_size"] - (float)config["min_size"]) + (float)config["min_size"]), 2);
+
             var playerSceneNode = playerPawn.CBodyComponent?.SceneNode;
             if (playerSceneNode == null)
                 return new Dictionary<string, string>
                 {
                     {"error", "command.rollthedice.error"}
                 };
+
             playerSceneNode.GetSkeletonInstance().Scale = playerSize;
             playerPawn.AcceptInput("SetScale", null, null, playerSize.ToString());
             Server.NextFrame(() =>
@@ -80,14 +114,6 @@ namespace RollTheDice
                 Utilities.SetStateChanged(player.PlayerPawn.Value, "CBaseEntity", "m_CBodyComponent");
             });
             _playersWithChangedModelSize.Remove(player.PlayerPawn.Value);
-        }
-
-        private Dictionary<string, object> DiceChangePlayerSizeConfig()
-        {
-            var config = new Dictionary<string, object>();
-            config["min_size"] = (float)0.5f;
-            config["max_size"] = (float)1.5f;
-            return config;
         }
     }
 }
